@@ -1737,7 +1737,11 @@
         }
         firebaseAuth = firebase.auth();
         firestoreDb = firebase.firestore();
-
+        firebaseAuth.getRedirectResult().catch((err) => {
+          if (err && err.code !== 'auth/credential-already-in-use') {
+            console.error('Redirect result error:', err);
+          }
+        });
         firebaseAuth.onAuthStateChanged(async (user) => {
           currentUser = user || null;
           updateCloudAuthUI();
