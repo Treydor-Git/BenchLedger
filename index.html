@@ -1806,18 +1806,14 @@
         return;
       }
       try {
-        setCloudSyncBadge('syncing', 'Signing in...');
+        setCloudSyncBadge('syncing', 'Redirecting to Google...');
         const provider = new firebase.auth.GoogleAuthProvider();
-        await firebaseAuth.signInWithPopup(provider);
-        showToast('Signed in with Google! Cloud sync active.');
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await firebaseAuth.signInWithRedirect(provider);
       } catch (err) {
         console.error('Google Sign-In error:', err);
         updateCloudAuthUI();
-        if (err && (err.code === 'auth/unauthorized-domain' || err.code === 'auth/operation-not-supported-in-this-environment')) {
-          openCloudHelpModal(err.code);
-        } else if (err && err.code !== 'auth/popup-closed-by-user') {
-          showToast('Sign-In failed: ' + (err.message || err.code));
-        }
+        showToast('Sign-In failed: ' + (err.message || err.code));
       }
     }
 
