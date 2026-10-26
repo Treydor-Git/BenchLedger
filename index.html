@@ -7820,50 +7820,48 @@
       const statusBox = document.getElementById('contact-submit-status');
       const submitBtn = document.getElementById('btn-contact-submit');
 
+      // 1. Show immediate responsive feedback
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Sending...</span>';
       }
       if (statusBox) {
         statusBox.className = 'p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-mono text-xs';
-        statusBox.textContent = 'Sending report directly to support...';
+        statusBox.textContent = 'Submitting report...';
         statusBox.classList.remove('hidden');
       }
 
-      // 1. Save directly to Firebase Firestore 'support_reports' collection if available
-      if (firestoreDb) {
-        try {
-          await firestoreDb.collection('support_reports').add({
-            topic,
-            subject,
-            message: fullText,
-            replyEmail: replyEmail || 'not_provided',
-            workspaceMode,
-            createdAt: new Date().toISOString(),
-            uid: currentUser ? currentUser.uid : 'anonymous'
-          });
-        } catch (err) {
-          console.warn('Firestore support_reports write skipped:', err);
-        }
-      }
+      // 2. Fire FormSubmit to Google Groups in the background with keepalive: true
+      const formSubmitPromise = fetch(`https://formsubmit.co/ajax/${encodeURIComponent(SUPPORT_RECEIVER_EMAIL)}`, {
+        method: 'POST',
+        keepalive: true, // Prevents cancellation if the user closes the page
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          _subject: subject,
+          topic,
+          reply_to: replyEmail || 'anonymous@benchledger.app',
+          message: fullText,
+          _captcha: 'false',
+          _template: 'table'
+        })
+      }).catch(err => console.warn('FormSubmit background dispatch:', err));
 
-      // 2. Send directly to Support Email via FormSubmit AJAX API (no email app redirect)
-      try {
-        await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(SUPPORT_RECEIVER_EMAIL)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({
-            _subject: subject,
-            topic,
-            reply_to: replyEmail || 'anonymous@benchledger.app',
-            message: fullText,
-            _captcha: 'false',
-            _template: 'table'
-          })
-        });
-      } catch (err) {
-        console.warn('Direct email endpoint unreachable:', err);
-      }
+      // 3. Save to Firebase Firestore simultaneously
+      const firestorePromise = firestoreDb ? firestoreDb.collection('support_reports').add({
+        topic,
+        subject,
+        message: fullText,
+        replyEmail: replyEmail || 'not_provided',
+        workspaceMode,
+        createdAt: new Date().toISOString(),
+        uid: currentUser ? currentUser.uid : 'anonymous'
+      }).catch(err => console.warn('Firestore report write:', err)) : Promise.resolve();
+
+      // 4. Cap UI waiting to max 700ms (instant UI response)
+      await Promise.race([
+        Promise.allSettled([firestorePromise, formSubmitPromise]),
+        new Promise(resolve => setTimeout(resolve, 700))
+      ]);
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -7872,16 +7870,17 @@
 
       if (statusBox) {
         statusBox.className = 'p-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-mono text-xs';
-        statusBox.innerHTML = '<i class="fa-solid fa-circle-check mr-1.5"></i> Report sent directly! Thank you for your feedback.';
+        statusBox.innerHTML = '<i class="fa-solid fa-circle-check mr-1.5"></i> Report sent! Thank you for your feedback.';
       }
 
       document.getElementById('contact-subject').value = '';
       document.getElementById('contact-body').value = '';
       showToast('Report sent directly to support!');
+
       setTimeout(() => {
         statusBox?.classList.add('hidden');
         closeContactModal();
-      }, 1500);
+      }, 800);
     }
 
     // Initialize saved Theme & Workspace Mode on startup (and show Welcome Modal on first visit)
