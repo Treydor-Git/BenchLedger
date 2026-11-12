@@ -3355,7 +3355,15 @@
 
     function stripLegacyDemoRepairs(list) {
       if (!Array.isArray(list)) return [];
-      return list.filter(r => !(r && LEGACY_DEMO_REPAIR_DEVICES.has(r.device)));
+      return list
+        .filter(r => !(r && LEGACY_DEMO_REPAIR_DEVICES.has(r.device)))
+        .map(r => {
+          // Clean up any warranty tag that was unintentionally set while in Hobbyist mode
+          if (r && !r.proJobType && !r.clientName && r.warranty === '90 Days Warranty') {
+            r.warranty = 'No Warranty';
+          }
+          return r;
+        });
     }
 
     function stripLegacyDemoSupplies(list) {
@@ -5841,13 +5849,13 @@
                 </div>
               </div>
 
-              ${(rep.clientName || rep.clientPhone || rep.serialNumber || (rep.paymentStatus && rep.paymentStatus !== 'Paid in Full') || (rep.warranty && rep.warranty !== 'No Warranty')) ? `
+              ${((typeof workspaceMode !== 'undefined' && workspaceMode === 'pro') && (rep.clientName || rep.clientPhone || rep.serialNumber || (rep.paymentStatus && rep.paymentStatus !== 'Paid in Full') || (rep.warranty && rep.warranty !== 'No Warranty'))) ? `
                 <div class="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
                   ${rep.clientName ? `<span onclick="filterRepairsByClientName('${escapeHtml(rep.clientName)}')" class="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 cursor-pointer transition" title="Click to filter tickets for this client"><i class="fa-solid fa-user-tag text-[10px]"></i> ${escapeHtml(rep.clientName)}</span>` : ''}
                   ${rep.clientPhone ? `<span class="px-2 py-0.5 rounded-lg bg-bench-950 text-slate-300 border border-bench-700 flex items-center gap-1"><i class="fa-solid fa-phone text-[9px] text-cyan-400"></i> ${escapeHtml(rep.clientPhone)}</span>` : ''}
                   ${rep.serialNumber ? `<span class="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1"><i class="fa-solid fa-barcode text-[10px]"></i> ${escapeHtml(rep.serialNumber)}</span>` : ''}
                   ${(rep.paymentStatus && rep.paymentStatus !== 'Paid in Full') ? `<span class="px-2 py-0.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30 font-semibold flex items-center gap-1"><i class="fa-solid fa-clock text-[9px]"></i> ${escapeHtml(rep.paymentStatus)}</span>` : ''}
-                  ${(rep.warranty && rep.warranty !== 'No Warranty') ? `<span class="px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1"><i class="fa-solid fa-shield-halved text-[9px]"></i> ${escapeHtml(rep.warranty)}</span>` : ''}
+                  ${(rep.warranty && rep.warranty !== 'No Warranty') ? `<span class="px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1.5"><i class="fa-solid fa-shield-halved text-[9px]"></i> <span>${escapeHtml(rep.warranty)}</span><button type="button" onclick="clearTicketWarranty('${rep.id}')" class="text-purple-300/70 hover:text-rose-300 ml-0.5 transition cursor-pointer" title="Remove warranty tag"><i class="fa-solid fa-xmark text-[10px]"></i></button></span>` : ''}
                 </div>
               ` : ''}
 
@@ -6623,7 +6631,7 @@
 
         const proFieldsBox = document.getElementById('modal-pro-shop-fields');
         const isPro = (typeof workspaceMode !== 'undefined' && workspaceMode === 'pro');
-        const showPro = isPro || Boolean(rep.clientName || rep.serialNumber || rep.clientPhone);
+        const showPro = isPro;
         if (proFieldsBox) {
           proFieldsBox.classList.toggle('hidden', !showPro);
         }
@@ -6632,6 +6640,7 @@
           setModalProJobType(detectedType, true);
           document.getElementById('form-destination').value = rep.destination || 'In Progress';
         } else {
+          if (warEl) warEl.value = 'No Warranty';
           resetDestinationOptionsForHobbyist();
           document.getElementById('form-destination').value = rep.destination || 'In Progress';
         }
@@ -6659,17 +6668,17 @@
         const serialEl = document.getElementById('form-serial-number');
         const payEl = document.getElementById('form-payment-status');
         const warEl = document.getElementById('form-warranty');
-        if (clientEl) clientEl.value = '';
-        if (phoneEl) phoneEl.value = '';
-        if (serialEl) serialEl.value = '';
-        if (payEl) payEl.value = 'Paid in Full';
-        if (warEl) warEl.value = '90 Days Warranty';
-
         const proFieldsBox = document.getElementById('modal-pro-shop-fields');
         const isPro = (typeof workspaceMode !== 'undefined' && workspaceMode === 'pro');
         if (proFieldsBox) {
           proFieldsBox.classList.toggle('hidden', !isPro);
         }
+
+        if (clientEl) clientEl.value = '';
+        if (phoneEl) phoneEl.value = '';
+        if (serialEl) serialEl.value = '';
+        if (payEl) payEl.value = 'Paid in Full';
+        if (warEl) warEl.value = isPro ? '90 Days Warranty' : 'No Warranty';
 
         if (isPro) {
           // Default to Client Repair Job in Pro Shop mode (only Components/ICs row needed initially)
@@ -7231,11 +7240,11 @@
         revenue: isPersonal ? 0 : (parseFloat(document.getElementById('form-revenue').value) || 0),
         estimatedValue: isPersonal ? (parseFloat(document.getElementById('form-estimated-value').value) || 0) : 0,
         revenueNote: document.getElementById('form-revenue-note').value.trim(),
-        clientName: isProFlip ? '' : (document.getElementById('form-client-name')?.value || '').trim(),
-        clientPhone: isProFlip ? '' : (document.getElementById('form-client-phone')?.value || '').trim(),
-        serialNumber: (document.getElementById('form-serial-number')?.value || '').trim(),
-        paymentStatus: isProFlip ? 'Paid in Full' : (document.getElementById('form-payment-status')?.value || 'Paid in Full'),
-        warranty: document.getElementById('form-warranty')?.value || 'No Warranty'
+        clientName: (!isProMode || isProFlip) ? '' : (document.getElementById('form-client-name')?.value || '').trim(),
+        clientPhone: (!isProMode || isProFlip) ? '' : (document.getElementById('form-client-phone')?.value || '').trim(),
+        serialNumber: !isProMode ? '' : (document.getElementById('form-serial-number')?.value || '').trim(),
+        paymentStatus: (!isProMode || isProFlip) ? 'Paid in Full' : (document.getElementById('form-payment-status')?.value || 'Paid in Full'),
+        warranty: !isProMode ? 'No Warranty' : (document.getElementById('form-warranty')?.value || 'No Warranty')
       };
 
       // Auto-sync client into CRM directory if a client name was entered
@@ -9959,12 +9968,23 @@
     // PRO SHOP MODAL JOB TYPE TOGGLE: CLIENT REPAIR JOB VS. SHOP FLIP / REFURB
     // -------------------------------------------------------------------------
     function resetDestinationOptionsForHobbyist() {
+      const warEl = document.getElementById('form-warranty');
+      if (warEl) warEl.value = 'No Warranty';
       const formDest = document.getElementById('form-destination');
       if (!formDest) return;
       Array.from(formDest.options).forEach(opt => {
         opt.hidden = false;
         opt.disabled = false;
       });
+    }
+
+    function clearTicketWarranty(repairId) {
+      const rep = repairs.find(r => r.id === repairId);
+      if (!rep) return;
+      rep.warranty = 'No Warranty';
+      saveStateToStorage();
+      renderAll();
+      showToast(`Removed warranty tag from ${rep.id}`);
     }
 
     function setModalProJobType(jobType, isEditingExisting = false) {
@@ -10141,6 +10161,7 @@
     window.removeDonorQuickAddPreset = removeDonorQuickAddPreset;
     window.resetDonorQuickAddPresetsToDefault = resetDonorQuickAddPresetsToDefault;
     window.setModalProJobType = setModalProJobType;
+    window.clearTicketWarranty = clearTicketWarranty;
     window.removeBoardFromDonorBoneyard = removeBoardFromDonorBoneyard;
     window.restoreBoardToDonorBoneyard = restoreBoardToDonorBoneyard;
     window.toggleShowDisposedDonorBoards = toggleShowDisposedDonorBoards;
